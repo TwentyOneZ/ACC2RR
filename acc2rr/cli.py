@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import asdict
+from pathlib import Path
+from typing import Iterable, Any
+
+import pandas as pd
+
+from .core import Config
+from .pipeline import analyze_recording, discover_acc_files, flatten_summary, write_summary_report
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Estimate respiratory rate from Polar H10 acc.csv recordings.")
+    p.add_argument("--data-root", type=Path, default=Path("data"), help="Root containing */*/acc.csv recordings.")
+    p.add_argument("--output-dir", type=Path, default=Path("results"), help="Directory for reports and plots.")
+    p.add_argument("--recording", type=Path, help="Analyze one acc.csv or one directory containing acc.csv.")
+    p.add_argument("--fmin", type=float, default=0.08, help="Minimum respiratory frequency [Hz].")
+    p.add_argument("--fmax", type=float, default=0.80, help="Maximum respiratory frequency [Hz].")
+    p.add_argument("--filter-order", type=int, default=4)
+    p.add_argument("--hampel-window-s", type=float, default=0.40)
+    p.add_argument("--hampel-sigma", type=float, default=4.0)
+    p.add_argument("--window-s", type=float, default=30.0)
+    p.add_argument("--hop-s", type=float, default=1.0)
+    p.add_argument("--min-confidence", type=float, default=0.45)
+    p.add_argument("--save-intermediate", action="store_true", help="Also write all preprocessed sample-level signals.")
+    return p
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cfg = Config(
+        fmin_hz=args.fmin,
+        fmax_hz=args.fmax,
+        filter_order=args.filter_order,
+        hampel_window_s=args.hampel_window_s,
+        hampel_n_sigma=args.hampel_sigma,
+        window_s=args.window_s,
+        hop_s=args.hop_s,
+        min_confidence=args.min_confidence,
+    )
+
+    if args.recording:
+        rec = args.recording
+        acc_files = [rec / "acc.csv"] if rec.is_dir() else [rec]
+    else:
+        acc_files = discover_acc_files(args.data_root)
+    if not acc_files:
+        raise SystemExit(f"No acc.csv files found under {args.data_root}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "config.json").write_text(
+        json.dumps(asdict(cfg), indent=2), encoding="utf-8"
+    )
+
+    summaries: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+    print(f"Found {len(acc_files)} recording(s).")
+    for acc_path in acc_files:
+        try:
+            if args.recording:
+                try:
+                    relative = acc_path.parent.relative_to(args.data_root)
+                except ValueError:
+                    relative = Path(acc_path.parent.parent.name) / acc_path.parent.name
+            else:
+                relative = acc_path.parent.relative_to(args.data_root)
+            out = args.output_dir / relative
+            print(f"[ACC2RR] {acc_path} -> {out}")
+            metrics = analyze_recording(acc_path, out, cfg, save_intermediate=args.save_intermediate)
+            summaries.append(flatten_summary(metrics))
+            est = metrics["full_record_estimate"]
+            print(
+                f"  RR={est['rr_final_bpm']:.3f} bpm | PSD={est['rr_psd_bpm']:.3f} | "
+                f"ACF={est['rr_acf_bpm']:.3f} | confidence={est['confidence']:.3f}"
+            )
+        except Exception as exc:
+            failures.append({"source": str(acc_path), "error": repr(exc)})
+            print(f"  ERROR: {exc}")
+
+    summary = pd.DataFrame(summaries)
+    if not summary.empty:
+        summary = summary.sort_values(["position", "target_rpm"], na_position="last").reset_index(drop=True)
+    write_summary_report(summary, args.output_dir, cfg)
+    if failures:
+        (args.output_dir / "failures.json").write_text(
+            json.dumps(failures, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"Completed with {len(failures)} failure(s). See {args.output_dir / 'failures.json'}")
+        return 2
+
+    print(f"Done. Summary: {args.output_dir / 'summary.csv'}")
+    print(f"Report: {args.output_dir / 'report.md'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
