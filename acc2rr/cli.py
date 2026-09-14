@@ -11,6 +11,7 @@ import pandas as pd
 from .core import Config
 from .pipeline import analyze_recording, discover_acc_files, flatten_summary, write_summary_report
 from .temporal import apply_temporal_tracking
+from .temporal_v4 import apply_temporal_tracking_v4
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,6 +73,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"[ACC2RR] {acc_path} -> {out}")
             metrics = analyze_recording(acc_path, out, cfg, save_intermediate=args.save_intermediate)
             metrics = apply_temporal_tracking(acc_path, out, cfg)
+            metrics = apply_temporal_tracking_v4(acc_path, out, cfg)
 
             summary_row = flatten_summary(metrics)
             ws = metrics.get("window_stats", {})
@@ -85,6 +87,10 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "window_temporal_harmonic_corrections": ws.get("temporal_harmonic_corrections_count"),
                     "window_v2_mae_smoothed_bpm": ws.get("v2_mae_smoothed_bpm"),
                     "window_v2_rmse_smoothed_bpm": ws.get("v2_rmse_smoothed_bpm"),
+                    "window_v3_mae_temporal_bpm": ws.get("v3_mae_temporal_bpm"),
+                    "window_v3_rmse_temporal_bpm": ws.get("v3_rmse_temporal_bpm"),
+                    "window_v3_mae_smoothed_bpm": ws.get("v3_mae_smoothed_bpm"),
+                    "window_v3_rmse_smoothed_bpm": ws.get("v3_rmse_smoothed_bpm"),
                 }
             )
             summaries.append(summary_row)
@@ -96,8 +102,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
             if ws.get("rr_temporal_median_bpm") is not None:
                 print(
-                    f"  windows: temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
-                    f"v3 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
+                    f"  windows: v4 temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
+                    f"v4 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
                     f"corrections={ws.get('temporal_corrections_count', 0)}"
                 )
         except Exception as exc:
