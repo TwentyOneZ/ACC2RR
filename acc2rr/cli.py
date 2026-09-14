@@ -8,6 +8,7 @@ from typing import Iterable, Any
 
 import pandas as pd
 
+from .adaptive_v7 import apply_adaptive_v7
 from .core import Config
 from .pipeline import analyze_recording, discover_acc_files, flatten_summary, write_summary_report
 from .surrogate_v5 import apply_surrogate_benchmark_v5
@@ -78,6 +79,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             metrics = apply_temporal_tracking_v4(acc_path, out, cfg)
             metrics = apply_surrogate_benchmark_v5(acc_path, out, cfg)
             metrics = apply_joint_tracking_v6(acc_path, out, cfg)
+            metrics = apply_adaptive_v7(acc_path, out, cfg)
 
             summary_row = flatten_summary(metrics)
             ws = metrics.get("window_stats", {})
@@ -99,12 +101,23 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "window_v4_rmse_temporal_bpm": ws.get("v4_rmse_temporal_bpm"),
                     "window_v4_mae_smoothed_bpm": ws.get("v4_mae_smoothed_bpm"),
                     "window_v4_rmse_smoothed_bpm": ws.get("v4_rmse_smoothed_bpm"),
+                    "window_v6_mae_temporal_bpm": ws.get("v6_mae_temporal_bpm"),
+                    "window_v6_rmse_temporal_bpm": ws.get("v6_rmse_temporal_bpm"),
+                    "window_v6_mae_smoothed_bpm": ws.get("v6_mae_smoothed_bpm"),
+                    "window_v6_rmse_smoothed_bpm": ws.get("v6_rmse_smoothed_bpm"),
                     "window_v6_all_mae_temporal_bpm": ws.get("v6_all_mae_temporal_bpm"),
                     "window_v6_all_mae_smoothed_bpm": ws.get("v6_all_mae_smoothed_bpm"),
                     "window_v6_selected_confidence_mean": ws.get("v6_selected_confidence_mean"),
                     "window_v6_selected_valid_fraction": ws.get("v6_selected_valid_fraction"),
                     "window_v6_selected_angle_median_deg": ws.get("v6_selected_angle_median_deg"),
                     "window_v6_angular_step_mean_deg": ws.get("v6_angular_step_mean_deg"),
+                    "window_v7_adaptive_fraction": ws.get("v7_adaptive_fraction"),
+                    "window_v7_mode_switch_count": ws.get("v7_mode_switch_count"),
+                    "window_v7_ambiguity_mean": ws.get("v7_ambiguity_mean"),
+                    "window_v7_eligible_fraction": ws.get("v7_eligible_fraction"),
+                    "window_v7_arm_a_opt_kalman_all_mae_bpm": ws.get("v7_arm_a_opt_kalman_all_mae_bpm"),
+                    "window_v7_arm_b_v6_kalman_all_mae_bpm": ws.get("v7_arm_b_v6_kalman_all_mae_bpm"),
+                    "window_v7_arm_c_hybrid_kalman_all_mae_bpm": ws.get("v7_arm_c_hybrid_kalman_all_mae_bpm"),
                 }
             )
 
@@ -130,10 +143,16 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
             if ws.get("rr_temporal_median_bpm") is not None:
                 print(
-                    f"  windows: v6 temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
-                    f"v6 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
-                    f"selected confidence={ws.get('v6_selected_confidence_mean', float('nan')):.3f} | "
-                    f"mean physical turn={ws.get('v6_angular_step_mean_deg', float('nan')):.2f} deg"
+                    f"  windows: v7 hybrid median={ws['rr_temporal_median_bpm']:.3f} bpm | "
+                    f"v7 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
+                    f"adaptive fraction={ws.get('v7_adaptive_fraction', float('nan')):.3f} | "
+                    f"mode switches={ws.get('v7_mode_switch_count', 0)}"
+                )
+                print(
+                    "  v7 A/B/C MAE: "
+                    f"A opt+Kalman={ws.get('v7_arm_a_opt_kalman_all_mae_bpm', float('nan')):.3f} | "
+                    f"B v6+Kalman={ws.get('v7_arm_b_v6_kalman_all_mae_bpm', float('nan')):.3f} | "
+                    f"C hybrid+Kalman={ws.get('v7_arm_c_hybrid_kalman_all_mae_bpm', float('nan')):.3f}"
                 )
             if v5_by_name:
                 pc1 = v5_by_name.get("pc1", {})
