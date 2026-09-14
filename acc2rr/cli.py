@@ -10,6 +10,7 @@ import pandas as pd
 
 from .core import Config
 from .pipeline import analyze_recording, discover_acc_files, flatten_summary, write_summary_report
+from .surrogate_v5 import apply_surrogate_benchmark_v5
 from .temporal import apply_temporal_tracking
 from .temporal_v4 import apply_temporal_tracking_v4
 
@@ -74,6 +75,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             metrics = analyze_recording(acc_path, out, cfg, save_intermediate=args.save_intermediate)
             metrics = apply_temporal_tracking(acc_path, out, cfg)
             metrics = apply_temporal_tracking_v4(acc_path, out, cfg)
+            metrics = apply_surrogate_benchmark_v5(acc_path, out, cfg)
 
             summary_row = flatten_summary(metrics)
             ws = metrics.get("window_stats", {})
@@ -93,6 +95,20 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "window_v3_rmse_smoothed_bpm": ws.get("v3_rmse_smoothed_bpm"),
                 }
             )
+
+            v5_rows = metrics.get("surrogate_benchmark_v5", {}).get("summary", [])
+            v5_by_name = {str(row.get("surrogate")): row for row in v5_rows}
+            for name in ("pc1", "pc2", "best_axis", "best_pca_component", "optimized_pc12"):
+                row = v5_by_name.get(name, {})
+                prefix = f"v5_{name}"
+                summary_row[f"{prefix}_target_mae_bpm"] = row.get("target_mae_bpm")
+                summary_row[f"{prefix}_target_rmse_bpm"] = row.get("target_rmse_bpm")
+                summary_row[f"{prefix}_confidence_mean"] = row.get("benchmark_confidence_mean")
+                summary_row[f"{prefix}_reference_ratio_median"] = row.get("reference_ratio_median")
+                summary_row[f"{prefix}_reference_fundamental_dominant_fraction"] = row.get(
+                    "reference_fundamental_dominant_fraction"
+                )
+
             summaries.append(summary_row)
 
             est = metrics["full_record_estimate"]
@@ -105,6 +121,16 @@ def main(argv: Iterable[str] | None = None) -> int:
                     f"  windows: v4 temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
                     f"v4 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
                     f"corrections={ws.get('temporal_corrections_count', 0)}"
+                )
+            if v5_by_name:
+                pc1 = v5_by_name.get("pc1", {})
+                pc2 = v5_by_name.get("pc2", {})
+                optimized = v5_by_name.get("optimized_pc12", {})
+                print(
+                    "  v5 benchmark: "
+                    f"PC1 MAE={pc1.get('target_mae_bpm', float('nan')):.3f} | "
+                    f"PC2 MAE={pc2.get('target_mae_bpm', float('nan')):.3f} | "
+                    f"optimized PC1/PC2 MAE={optimized.get('target_mae_bpm', float('nan')):.3f}"
                 )
         except Exception as exc:
             failures.append({"source": str(acc_path), "error": repr(exc)})
