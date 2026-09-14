@@ -1,0 +1,15 @@
+{
+  "device_name": "Polar H10 08F39531",
+  "device_address": "24:AC:AC:08:F3:95",
+  "battery_percent": 100,
+  "ecg_sample_rate_hz": 130,
+  "acc_sample_rate_hz": 50,
+  "acc_range_g": 2,
+  "requested_duration_s": 120.0,
+  "actual_duration_s": 120.012,
+  "n_ecg_samples": 11680,
+  "n_acc_samples": 4608,
+  "n_hr_samples": 179,
+  "recorded_at_epoch_s": 1789165507.371114,
+  "recorded_at_local": "2026-09-11 19:25:07.371"
+}
