@@ -9,6 +9,7 @@ from typing import Iterable, Any
 import pandas as pd
 
 from .adaptive_v7 import apply_adaptive_v7
+from .adaptive_v8 import apply_adaptive_v8
 from .core import Config
 from .pipeline import analyze_recording, discover_acc_files, flatten_summary, write_summary_report
 from .surrogate_v5 import apply_surrogate_benchmark_v5
@@ -80,6 +81,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             metrics = apply_surrogate_benchmark_v5(acc_path, out, cfg)
             metrics = apply_joint_tracking_v6(acc_path, out, cfg)
             metrics = apply_adaptive_v7(acc_path, out, cfg)
+            metrics = apply_adaptive_v8(acc_path, out, cfg)
 
             summary_row = flatten_summary(metrics)
             ws = metrics.get("window_stats", {})
@@ -118,6 +120,14 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "window_v7_arm_a_opt_kalman_all_mae_bpm": ws.get("v7_arm_a_opt_kalman_all_mae_bpm"),
                     "window_v7_arm_b_v6_kalman_all_mae_bpm": ws.get("v7_arm_b_v6_kalman_all_mae_bpm"),
                     "window_v7_arm_c_hybrid_kalman_all_mae_bpm": ws.get("v7_arm_c_hybrid_kalman_all_mae_bpm"),
+                    "window_v8_hard_adaptive_fraction": ws.get("v8_hard_adaptive_fraction"),
+                    "window_v8_hard_mode_switch_count": ws.get("v8_hard_mode_switch_count"),
+                    "window_v8_soft_alpha_mean": ws.get("v8_soft_alpha_mean"),
+                    "window_v8_soft_alpha_median": ws.get("v8_soft_alpha_median"),
+                    "window_v8_arm_a_classic_kalman_all_mae_bpm": ws.get("v8_arm_a_classic_kalman_all_mae_bpm"),
+                    "window_v8_arm_b_opt_kalman_all_mae_bpm": ws.get("v8_arm_b_opt_kalman_all_mae_bpm"),
+                    "window_v8_arm_c_hard_kalman_all_mae_bpm": ws.get("v8_arm_c_hard_kalman_all_mae_bpm"),
+                    "window_v8_arm_d_soft_kalman_all_mae_bpm": ws.get("v8_arm_d_soft_kalman_all_mae_bpm"),
                 }
             )
 
@@ -143,16 +153,17 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
             if ws.get("rr_temporal_median_bpm") is not None:
                 print(
-                    f"  windows: v7 hybrid median={ws['rr_temporal_median_bpm']:.3f} bpm | "
-                    f"v7 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
-                    f"adaptive fraction={ws.get('v7_adaptive_fraction', float('nan')):.3f} | "
-                    f"mode switches={ws.get('v7_mode_switch_count', 0)}"
+                    f"  windows: v8 soft median={ws['rr_temporal_median_bpm']:.3f} bpm | "
+                    f"v8 soft Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
+                    f"hard adaptive fraction={ws.get('v8_hard_adaptive_fraction', float('nan')):.3f} | "
+                    f"soft alpha mean={ws.get('v8_soft_alpha_mean', float('nan')):.3f}"
                 )
                 print(
-                    "  v7 A/B/C MAE: "
-                    f"A opt+Kalman={ws.get('v7_arm_a_opt_kalman_all_mae_bpm', float('nan')):.3f} | "
-                    f"B v6+Kalman={ws.get('v7_arm_b_v6_kalman_all_mae_bpm', float('nan')):.3f} | "
-                    f"C hybrid+Kalman={ws.get('v7_arm_c_hybrid_kalman_all_mae_bpm', float('nan')):.3f}"
+                    "  v8 A/B/C/D MAE: "
+                    f"A classic+K={ws.get('v8_arm_a_classic_kalman_all_mae_bpm', float('nan')):.3f} | "
+                    f"B opt+K={ws.get('v8_arm_b_opt_kalman_all_mae_bpm', float('nan')):.3f} | "
+                    f"C hard+K={ws.get('v8_arm_c_hard_kalman_all_mae_bpm', float('nan')):.3f} | "
+                    f"D soft+K={ws.get('v8_arm_d_soft_kalman_all_mae_bpm', float('nan')):.3f}"
                 )
             if v5_by_name:
                 pc1 = v5_by_name.get("pc1", {})
