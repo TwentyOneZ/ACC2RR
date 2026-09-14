@@ -13,6 +13,7 @@ from .pipeline import analyze_recording, discover_acc_files, flatten_summary, wr
 from .surrogate_v5 import apply_surrogate_benchmark_v5
 from .temporal import apply_temporal_tracking
 from .temporal_v4 import apply_temporal_tracking_v4
+from .temporal_v6 import apply_joint_tracking_v6
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +77,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             metrics = apply_temporal_tracking(acc_path, out, cfg)
             metrics = apply_temporal_tracking_v4(acc_path, out, cfg)
             metrics = apply_surrogate_benchmark_v5(acc_path, out, cfg)
+            metrics = apply_joint_tracking_v6(acc_path, out, cfg)
 
             summary_row = flatten_summary(metrics)
             ws = metrics.get("window_stats", {})
@@ -85,14 +87,24 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "window_mae_temporal_bpm": ws.get("mae_temporal_bpm"),
                     "window_rmse_temporal_bpm": ws.get("rmse_temporal_bpm"),
                     "window_bias_temporal_bpm": ws.get("bias_temporal_bpm"),
-                    "window_temporal_corrections": ws.get("temporal_corrections_count"),
-                    "window_temporal_harmonic_corrections": ws.get("temporal_harmonic_corrections_count"),
+                    "window_mae_smoothed_bpm": ws.get("mae_smoothed_bpm"),
+                    "window_rmse_smoothed_bpm": ws.get("rmse_smoothed_bpm"),
                     "window_v2_mae_smoothed_bpm": ws.get("v2_mae_smoothed_bpm"),
                     "window_v2_rmse_smoothed_bpm": ws.get("v2_rmse_smoothed_bpm"),
                     "window_v3_mae_temporal_bpm": ws.get("v3_mae_temporal_bpm"),
                     "window_v3_rmse_temporal_bpm": ws.get("v3_rmse_temporal_bpm"),
                     "window_v3_mae_smoothed_bpm": ws.get("v3_mae_smoothed_bpm"),
                     "window_v3_rmse_smoothed_bpm": ws.get("v3_rmse_smoothed_bpm"),
+                    "window_v4_mae_temporal_bpm": ws.get("v4_mae_temporal_bpm"),
+                    "window_v4_rmse_temporal_bpm": ws.get("v4_rmse_temporal_bpm"),
+                    "window_v4_mae_smoothed_bpm": ws.get("v4_mae_smoothed_bpm"),
+                    "window_v4_rmse_smoothed_bpm": ws.get("v4_rmse_smoothed_bpm"),
+                    "window_v6_all_mae_temporal_bpm": ws.get("v6_all_mae_temporal_bpm"),
+                    "window_v6_all_mae_smoothed_bpm": ws.get("v6_all_mae_smoothed_bpm"),
+                    "window_v6_selected_confidence_mean": ws.get("v6_selected_confidence_mean"),
+                    "window_v6_selected_valid_fraction": ws.get("v6_selected_valid_fraction"),
+                    "window_v6_selected_angle_median_deg": ws.get("v6_selected_angle_median_deg"),
+                    "window_v6_angular_step_mean_deg": ws.get("v6_angular_step_mean_deg"),
                 }
             )
 
@@ -118,18 +130,17 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
             if ws.get("rr_temporal_median_bpm") is not None:
                 print(
-                    f"  windows: v4 temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
-                    f"v4 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
-                    f"corrections={ws.get('temporal_corrections_count', 0)}"
+                    f"  windows: v6 temporal median={ws['rr_temporal_median_bpm']:.3f} bpm | "
+                    f"v6 Kalman median={ws.get('rr_smoothed_median_bpm', float('nan')):.3f} | "
+                    f"selected confidence={ws.get('v6_selected_confidence_mean', float('nan')):.3f} | "
+                    f"mean physical turn={ws.get('v6_angular_step_mean_deg', float('nan')):.2f} deg"
                 )
             if v5_by_name:
                 pc1 = v5_by_name.get("pc1", {})
-                pc2 = v5_by_name.get("pc2", {})
                 optimized = v5_by_name.get("optimized_pc12", {})
                 print(
-                    "  v5 benchmark: "
+                    "  v5 benchmark retained: "
                     f"PC1 MAE={pc1.get('target_mae_bpm', float('nan')):.3f} | "
-                    f"PC2 MAE={pc2.get('target_mae_bpm', float('nan')):.3f} | "
                     f"optimized PC1/PC2 MAE={optimized.get('target_mae_bpm', float('nan')):.3f}"
                 )
         except Exception as exc:
