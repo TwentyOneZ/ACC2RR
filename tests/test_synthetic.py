@@ -7,6 +7,7 @@ from acc2rr.core import (
     pca_surrogate, project_perpendicular_to_gravity,
 )
 from acc2rr.estimators import consensus_estimate, estimate_surrogate, motion_quality
+from acc2rr.temporal import harmonic_viterbi_track, temporal_candidate_set
 
 
 def synthetic_h10(rr_bpm: float, duration_s: float = 120.0, fs: float = 50.0, seed: int = 7, strong_harmonic: bool = False):
@@ -37,12 +38,7 @@ def synthetic_h10(rr_bpm: float, duration_s: float = 120.0, fs: float = 50.0, se
 
 
 def fake_psd(cfg: Config, peaks: list[tuple[float, float]], selected_hz: float):
-    """Build a deterministic PSD fixture with Gaussian peaks.
-
-    peaks contains (frequency_hz, normalized_amplitude). This lets the tests
-    reproduce the observed real-data failure mode without relying on the exact
-    biomechanical waveform that generated it.
-    """
+    """Build a deterministic PSD fixture with Gaussian peaks."""
     freq = np.linspace(cfg.fmin_hz, cfg.fmax_hz, 4000)
     power = np.full_like(freq, 1e-5)
     for f_hz, amplitude in peaks:
@@ -73,6 +69,20 @@ def fake_acf(rr_bpm: float, quality: float, points: list[tuple[float, float]]):
         "candidate_freqs_hz": [rr_bpm / 60.0],
         "selected_lag_s": 60.0 / rr_bpm,
     }
+
+
+def rr_candidates(*pairs: tuple[float, float]):
+    return [
+        {
+            "rr_bpm": float(rr),
+            "score": float(score),
+            "spectral_support": 0.0,
+            "acf_support": 0.0,
+            "harmonic_support": 0.0,
+            "soft_alias_bonus": 0.0,
+        }
+        for rr, score in pairs
+    ]
 
 
 class SyntheticPipelineTests(unittest.TestCase):
@@ -141,8 +151,6 @@ class HarmonicConsensusRegressionTests(unittest.TestCase):
         self.assertGreater(agreement, 0.95)
 
     def test_consensus_ignores_weak_misleading_acf_subharmonic(self):
-        # PSD says 20 rpm while a deliberately weak/noisy ACF says 10 rpm.
-        # The harmonic gate must remain closed, preventing false halving.
         psd = fake_psd(
             self.cfg,
             [(20.0 / 60.0, 1.0), (10.0 / 60.0, 0.12)],
@@ -171,6 +179,56 @@ class HarmonicConsensusRegressionTests(unittest.TestCase):
         self.assertLess(abs(rr - 12.0), 0.5)
         self.assertGreater(score, 0.5)
         self.assertGreaterEqual(agreement, 0.60)
+
+
+class TemporalTrackerRegressionTests(unittest.TestCase):
+    def setUp(self):
+        self.cfg = Config()
+
+    def test_soft_alias_candidate_exists_below_strict_v2_gate(self):
+        # Direct fundamental power (0.09) is intentionally below the strict
+        # v2 0.10 threshold, matching the problematic 30 s windows.
+        psd = fake_psd(
+            self.cfg,
+            [(40.0 / 60.0, 1.0), (20.0 / 60.0, 0.09)],
+            selected_hz=40.0 / 60.0,
+        )
+        acf = fake_acf(
+            rr_bpm=20.0,
+            quality=0.62,
+            points=[(3.0, 0.50), (1.5, 0.30)],
+        )
+        candidates = temporal_candidate_set(psd, acf, self.cfg, raw_rr_bpm=40.0)
+        fundamental = min(candidates, key=lambda c: abs(c["rr_bpm"] - 20.0))
+        self.assertLess(abs(fundamental["rr_bpm"] - 20.0), 0.75)
+        self.assertGreater(fundamental["soft_alias_bonus"], 0.10)
+
+    def test_short_harmonic_excursion_is_rejected(self):
+        candidate_sets = (
+            [rr_candidates((20.0, 0.85), (40.0, 0.30)) for _ in range(12)]
+            + [rr_candidates((20.0, 0.58), (40.0, 0.75)) for _ in range(30)]
+            + [rr_candidates((20.0, 0.85), (40.0, 0.30)) for _ in range(12)]
+        )
+        tracked = harmonic_viterbi_track(candidate_sets, hop_s=1.0)["rr_bpm"]
+        self.assertTrue(np.all(np.abs(tracked - 20.0) < 0.5))
+
+    def test_sustained_true_harmonic_rate_change_is_allowed(self):
+        candidate_sets = (
+            [rr_candidates((20.0, 0.85), (40.0, 0.30)) for _ in range(20)]
+            + [rr_candidates((20.0, 0.30), (40.0, 0.88)) for _ in range(60)]
+        )
+        tracked = harmonic_viterbi_track(candidate_sets, hop_s=1.0)["rr_bpm"]
+        self.assertTrue(np.all(np.abs(tracked[:20] - 20.0) < 0.5))
+        self.assertGreater(np.mean(np.abs(tracked[-40:] - 40.0) < 0.5), 0.95)
+
+    def test_gradual_nonharmonic_change_is_not_frozen(self):
+        expected = np.linspace(12.0, 22.0, 50)
+        candidate_sets = [
+            rr_candidates((float(rr), 0.90), (float(2.0 * rr), 0.45))
+            for rr in expected
+        ]
+        tracked = harmonic_viterbi_track(candidate_sets, hop_s=1.0)["rr_bpm"]
+        self.assertLess(float(np.mean(np.abs(tracked - expected))), 0.5)
 
 
 if __name__ == "__main__":
